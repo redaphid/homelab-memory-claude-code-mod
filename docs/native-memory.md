@@ -31,7 +31,7 @@ Claude Code has five memory surfaces. The mod has to cover each one: turn it off
   - `autoMemoryDirectory`, which redirects the directory but doesn't remove the feature
   - Self-hosted environment sessions default to off.
 
-Turning auto memory off removes both the directory and the prompt section. The mirror design needs native writes to copy, so the mod keeps auto memory **on**. See [fallback-and-migration.md](fallback-and-migration.md).
+Turning auto memory off removes both the directory and the prompt section. The mirror design needs native writes to copy, so the mod keeps auto memory **on**. See [sync.md](sync.md).
 
 ## 2. Team memory
 

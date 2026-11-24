@@ -64,7 +64,7 @@ export const register: Register = on => {
   on('prompt.section', { name: 'memory' }, () => ({ text: CONTRACT }))
 
   // 2. Answer memory_write from the vault; the native store never sees it.
-  //    If the vault fails, fall back to the native tool (see fallback-and-migration.md).
+  //    If the vault fails, fall back to the native tool (see sync.md).
   on('tool.call', { tool: 'memory_write' }, async ($, e, next) => {
     const r = await $.mcp.call(VAULT, 'markdown-vault-mcp__write', {
       path: `claude-memory${e.path}`,
