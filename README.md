@@ -1,6 +1,6 @@
 # homelab-memory-claude-code-mod
 
-A Claude Code mod that sends Claude Code's memory to self-hosted memory MCP servers instead of the harness's own stores:
+A Claude Code mod that copies Claude Code's memory into self-hosted memory MCP servers, alongside the harness's own stores:
 
 - a **markdown vault** MCP server for durable notes, facts and procedures
 - **mindmeld**, a search index over past agent conversations
