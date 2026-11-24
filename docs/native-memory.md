@@ -10,7 +10,7 @@ Claude Code has five memory surfaces. The mod has to cover each one: turn it off
 
 | # | Surface | How it works | How to turn it off | Plan |
 |---|---|---|---|---|
-| 1 | Auto memory | Files under `~/.claude/projects/<project>/memory/`, written with the ordinary Write and Edit tools. A system-prompt section tells the model about it. | `autoMemoryEnabled: false` in settings, or `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` | Off; the memory section is replaced with the vault contract |
+| 1 | Auto memory | Files under `~/.claude/projects/<project>/memory/`, written with the ordinary Write and Edit tools. A system-prompt section tells the model about it. | `autoMemoryEnabled: false` in settings, or `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` | Left on as the fallback; while the vault is up, the memory section is replaced with the vault contract |
 | 2 | Team memory | A shared directory synced at session start with the other users of the project | Not checked | Off or redirected |
 | 3 | Memory-store tools | Tools named `memory_list`, `memory_read` and `memory_write` | Unknown | Redirected to the vault, or hidden |
 | 4 | Subagent memory | A subagent's `memory: user \| project \| local` frontmatter | Turned off along with auto memory | Off; the subagent gets the vault contract instead |
@@ -31,7 +31,7 @@ Claude Code has five memory surfaces. The mod has to cover each one: turn it off
   - `autoMemoryDirectory`, which redirects the directory but doesn't remove the feature
   - Self-hosted environment sessions default to off.
 
-Turning auto memory off removes both the directory and the prompt section. That's why the mod still needs to put the vault contract into the prompt.
+Turning auto memory off removes both the directory and the prompt section. That leaves nothing to fall back to, so the mod keeps auto memory **on** and replaces the prompt section itself while the vault is reachable. See [fallback-and-migration.md](fallback-and-migration.md).
 
 ## 2. Team memory
 
