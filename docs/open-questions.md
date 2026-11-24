@@ -7,7 +7,10 @@ As of 2026-11-23.
 - **Which surfaces expose `memory_list`, `memory_read` and `memory_write`?** They are in the 2.1.331 engine but not in a local CLI session's tool list, and Anthropic's docs and CHANGELOG don't name them. To find out: hook `tool.call` on them in a loaded mod, log any call, and check the tool list on claude.ai and on Claude Code on the web.
 - **What is the memory section's id?** The type file's example uses `memory`, and the docs don't list ids. To find out: log the ids from `next(e)` in a `prompt.compose` hook, with auto memory on and with it off.
 - **Can team memory be switched off locally?** We don't know yet.
-- **What is "ccmod"?** It may be a third-party Claude Code modding tool. The search for it was paused before it reported. If it exists, compare it with the official mod API: what it can do that the API can't, and the risk of patching the binary.
+
+## Answered
+
+- **ccmod / tweakcc** (2026-11-24): third-party binary patchers. Not used. See [patchers.md](patchers.md).
 
 ## Decisions
 

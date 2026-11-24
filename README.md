@@ -18,6 +18,7 @@ Research only, as of 2026-11-23. No mod code yet. The research covers Claude Cod
 | [docs/native-memory.md](docs/native-memory.md) | Which memory systems Claude Code has, and how to turn each off |
 | [docs/hook-points.md](docs/hook-points.md) | Where a mod can intercept them, by tool name, with code sketches |
 | [docs/sync.md](docs/sync.md) | The sync design: writes mirror to the vault, reads prefer the vault and backfill |
+| [docs/patchers.md](docs/patchers.md) | Third-party patchers (ccmod, tweakcc) and why this mod doesn't use them |
 | [docs/open-questions.md](docs/open-questions.md) | What is still unknown and the decisions not yet made |
 
 ## Prior art
