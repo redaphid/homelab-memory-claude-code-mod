@@ -1,59 +1,73 @@
-# Fallback and migration
+# Mirror design: native memory runs, the vault gets a copy
 
-Requirement, 2026-11-23: when the memory MCP servers can't be reached, Claude Code **falls back to its default memory behaviour**. Whatever it writes natively during the fallback is **migrated into the vault** once the vault is back.
+Requirement, 2026-11-23, in two steps:
 
-So the mod has two modes, chosen by vault health, plus a migration step between them:
+1. "We will want to 'fall back' to default behavior, and migrate on fallback."
+2. Refined: "maybe we intercept the tool call and add the memory to my markdown vault, then let it continue default behavior."
+
+So the mod is a **tee**. Claude Code's own memory works exactly as it does by default. Every memory write also goes to the vault, so the vault holds a full copy that every harness can read.
 
 ```
-          vault reachable                         vault unreachable
-   ┌──────────────────────────┐            ┌──────────────────────────┐
-   │ ROUTED                   │  vault     │ FALLBACK                 │
-   │ memory section -> vault  │  fails     │ native memory section    │
-   │ memory_* -> vault        │ ─────────▶ │ native memory_* tools    │
-   │ memory-dir writes denied │            │ native memory-dir writes │
-   └──────────────────────────┘ ◀───────── └──────────────────────────┘
-                                 vault back:
-                                 MIGRATE native writes into the vault
+ model ── memory write ──▶ mod hook ──▶ next(e): native write runs (unchanged)
+                               │
+                               └──▶ on success: copy the written file to the vault
+                                       │ vault down?
+                                       └──▶ queue it; a catch-up scan copies it later
 ```
 
-## Consequence: native memory has to stay on
+Why this beats routing memory to the vault instead of native memory:
 
-Fallback needs native memory switched on underneath the mod. Today it is off, and these settings have to go once the mod ships:
+- **Fallback is free.** Native memory always runs. A vault outage costs nothing but a delayed copy.
+- **Migration becomes catch-up.** A catch-up scan copies whatever the vault is missing. There's no mode to switch and no prompt-cache invalidation.
+- **Little to get wrong.** The mod never answers in place of a tool, so it never has to fake a tool's result schema.
 
-- `autoMemoryEnabled: false` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. With either one set, there's nothing to fall back to.
-- the classic `PreToolUse` memory guard that denies writes into memory directories. In fallback mode it would block the fallback.
+## What it hooks
 
-The mod takes over their job. In routed mode, it replaces the memory prompt section and denies or redirects memory-dir writes itself. In fallback mode, it calls `next(e)` and steps aside.
+| Native write | Hook | What gets copied |
+|---|---|---|
+| Auto memory, through `Write` / `Edit` / `NotebookEdit` into `~/.claude/projects/<p>/memory/` | `tool.call` on those tools, path-matched | The whole file as it stands after the tool ran, read back with `$.fs` (an `Edit` input only carries a diff) |
+| Subagent memory, the same tools into `agent-memory*/<name>/` | Same | Same |
+| `memory_write` (surfaces that have it) | `tool.call` `{ tool: 'memory_write' }` | `e.content` |
+| Anything else: `Bash` writes, deletes, files written while the mod was off | The catch-up scan | Whatever differs |
 
-## Deciding the mode
+The rule for every hook:
 
-- **At `session.start`:** probe the vault with `$.mcp.call(VAULT, 'stats')` or a similar cheap call, under a short timeout. Store the mode in `$.state`.
-- **Per call:** a routed `tool.call` hook whose vault call throws or returns `isError` falls through to `next(e)` (native) and flips the mode to fallback. This builds on how guards already work: a failed hook is skipped and the tool runs. So the `.catch` falls through with `next(e)` instead of denying.
-- **The prompt section:** `prompt.section` answers are cached for the thread. Switching mode mid-thread only takes effect after `$.ui.invalidate("prompt.section")` plus a new thread or a compaction, unless the answer carries `breakPromptCache: true`. Use `breakPromptCache` only when the mode actually flips.
-- **While in fallback:** re-probe on a timer (`$.clock`) or at each `turn.complete`. When the vault answers, migrate, then switch to routed.
+1. Call `await next(e)` first.
+2. Copy only if that result is not a `deny` and not `isError`. Then the vault never holds a write that didn't land natively.
+3. Return the native result untouched.
 
-## Migration
+```ts
+on('tool.call', { tool: 'Write' }, async ($, e, next) => {
+  const ran = await next(e)
+  if (MEMORY_DIR.test(e.file_path) && ran.deny === undefined && !ran.isError)
+    await mirror($, e.file_path).catch(() => queue($, e.file_path))
+  return ran
+})
+```
 
-The source is whatever native memory holds that the vault doesn't:
+`mirror` runs under a short timeout so a slow vault never stalls the tool call. On failure the path goes into a `$.store` queue for the catch-up scan.
 
-- auto memory: `~/.claude/projects/<project>/memory/*.md` (`MEMORY.md` plus topic files)
-- subagent memory: `~/.claude/agent-memory*/<name>/`, `.claude/agent-memory*/<name>/`
-- the memory-store tools, if this surface has them: `memory_list`, then `memory_read` for each entry
+## Catch-up scan (the "migration")
 
-Steps, all idempotent, so a crash halfway through is safe to rerun:
+It runs at `session.start`, after a failed copy, and on a timer while the queue is not empty. It is idempotent:
 
-1. **Find the files.** List the native files. Skip any whose content hash is already in `$.store` under `migrated`.
-2. **Write.** Write each one to the vault. Default destination: a `claude-memory/inbox/<project>/<file>` folder. Sorting into `kb/facts`, `kb/rules` and so on is a follow-up, done by a person or an agent following the vault's conventions. If the destination already exists with different content, append instead of overwriting.
-3. **Record.** Put the content hash in `$.store.migrated` only after the vault write succeeds.
-4. **Leave the original.** Don't delete it. Replace it with a one-line pointer to its vault path, the same way the manual migration of 2026-11-06 handled files (originals kept as `*.bak-premigrate`). `MEMORY.md` stays a valid index.
+1. List the native memory files: auto memory, agent memory, and `memory_list` where that tool exists.
+2. Hash each one. Skip any whose hash matches the last successful copy recorded in `$.store`.
+3. Write it to the vault, then record the hash.
+4. A file that disappeared natively is **not** deleted from the vault. Mark it removed in its vault frontmatter instead.
 
-Migration runs:
+The first run copies everything existing native memory holds, which makes it the one-time migration too.
 
-- at `session.start` when the vault is up and native files have changed since the last run (mtimes or hashes)
-- on the fallback-to-routed transition mid-session
+## Where copies land
 
-## Open
+Default: `claude-memory/<project>/<file>` in the vault, one folder per Claude Code project. The vault is the copy and native is the source, so a later native write overwrites the vault copy. Sorting copies into `kb/facts`, `kb/rules` and so on is separate work, done by a person or an agent following the vault's conventions.
 
-- **Show the mode.** Should fallback be visible? A status line (`$.ui.status('memory: native (vault down)')`) or a toast on each flip would do it.
-- **Read-your-own-writes.** During fallback the model reads native memory. Right after migration, does it need the vault copy, or is the pointer file enough?
-- **Mindmeld.** It's read-only from Claude Code's side (search), so it has no migration path. During fallback, retrieval just goes without it.
+## Consequences
+
+- **Native memory turns back on.** Today `autoMemoryEnabled: false`, `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` and a `PreToolUse` guard that denies memory-dir writes keep it off. All three go once the mod ships, or there's nothing to copy.
+- **One-way sync.** Edits made in the vault don't flow back into native memory. Claude Code keeps reading its own copy.
+- **Retrieval is separate.** The mirror doesn't make Claude Code read the vault or mindmeld. If that's wanted, add a line to the memory prompt section (`prompt.section`, append, don't replace) or inject hits once with `prompt.context`.
+
+## Considered and set aside: routing to the vault, with fallback
+
+The first version of this doc had the mod answer memory calls from the vault (`{ result }` in place of the tool), switch to native when the vault was down, and migrate native writes when it came back. That needs mode tracking, prompt-section swaps that fight the prompt cache, and results faked to each tool's schema. The mirror gets the same outcome (vault has everything, nothing lost during an outage) with none of that.

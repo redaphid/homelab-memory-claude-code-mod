@@ -11,6 +11,6 @@ As of 2026-11-23.
 
 ## Decisions
 
-- **Redirect or hide the `memory_*` tools?** With fallback, "hide" only applies while the vault is up. Redirecting keeps the model's native habit and quietly lands the writes in the vault. Hiding them forces the model to use the vault tools directly.
+- **Mirror is the current direction** (2026-11-23): native writes run, then get copied to the vault. See [fallback-and-migration.md](fallback-and-migration.md).
 - **Where do redirected writes land in the vault?** One `claude-memory/` folder, or routed by type (`kb/facts`, `kb/rules`, `kb/research`) the way the vault's conventions expect?
 - **Retrieval.** Should `prompt.context` inject vault or mindmeld hits at conversation start? Forced retrieval on every prompt was rejected earlier. Once per conversation is untested.
